@@ -27,7 +27,7 @@ email:
 # 报告配置
 report:
   # 排行榜显示数量
-  top_n: 100
+  top_n: 10
   
   # 是否只发送溢价率最高的（不发送最低的）
   only_premium: false
