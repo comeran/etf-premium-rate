@@ -18,8 +18,8 @@ email:
   
   # 收件人列表（可以配置多个）
   recipients:
-    - "recipient1@example.com"
-    - "recipient2@example.com"
+    - "zane86347@gmail.com"
+    - "homeranran@gmail.com"
   
   # 邮件主题
   subject: "📊 ETF/LOF溢价率排行榜 - {date}"
@@ -27,7 +27,7 @@ email:
 # 报告配置
 report:
   # 排行榜显示数量
-  top_n: 100
+  top_n: 10
   
   # 是否只发送溢价率最高的（不发送最低的）
   only_premium: false
