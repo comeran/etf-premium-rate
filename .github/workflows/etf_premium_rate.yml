@@ -1,0 +1,58 @@
+name: ETF Premium Rate Report
+
+on:
+  schedule:
+    # 默认每天 UTC 时间 2:00 (北京时间 10:00) 运行
+    # 实际时间从 config.yaml 中读取，但 GitHub Actions 的 cron 需要在这里设置
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create config.yaml from Secrets
+      run: |
+        # 从 GitHub Secrets 生成配置文件
+        # 处理多个收件人（用逗号分隔，转换为 YAML 列表格式）
+        RECIPIENTS="${{ secrets.EMAIL_RECIPIENTS }}"
+        RECIPIENTS_YAML=$(echo "$RECIPIENTS" | sed 's/, */\n            - /g' | sed 's/^/            - /')
+        
+        cat > config.yaml << EOF
+        email:
+          smtp:
+            host: "${{ secrets.EMAIL_SMTP_HOST || 'smtp.qq.com' }}"
+            port: ${{ secrets.EMAIL_SMTP_PORT || 587 }}
+            use_tls: ${{ secrets.EMAIL_SMTP_USE_TLS != 'false' }}
+            username: "${{ secrets.EMAIL_USERNAME }}"
+            password: "${{ secrets.EMAIL_PASSWORD }}"
+          recipients:
+        $RECIPIENTS_YAML
+          subject: "${{ secrets.EMAIL_SUBJECT || '📊 ETF/LOF溢价率排行榜 - {date}' }}"
+        report:
+          top_n: ${{ secrets.REPORT_TOP_N || 100 }}
+          only_premium: ${{ secrets.REPORT_ONLY_PREMIUM == 'true' }}
+        schedule:
+          hour: 2
+          minute: 0
+        EOF
+        echo "✅ 配置文件已生成"
+        
+    - name: Generate and send ETF Premium Rate Report
+      run: |
+        python src/etf_premium_rate.py
+
