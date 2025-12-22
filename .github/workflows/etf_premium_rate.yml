@@ -31,30 +31,28 @@ jobs:
         RECIPIENTS="${{ secrets.EMAIL_RECIPIENTS }}"
         
         # 生成 config.yaml
-        {
-          echo "email:"
-          echo "  smtp:"
-          echo "    host: \"${{ secrets.EMAIL_SMTP_HOST || 'smtp.qq.com' }}\""
-          echo "    port: ${{ secrets.EMAIL_SMTP_PORT || 587 }}"
-          echo "    use_tls: ${{ secrets.EMAIL_SMTP_USE_TLS != 'false' }}"
-          echo "    username: \"${{ secrets.EMAIL_USERNAME || '' }}\""
-          echo "    password: \"${{ secrets.EMAIL_PASSWORD || '' }}\""
-          echo "  recipients:"
-          if [ -n "$RECIPIENTS" ]; then
-            # 处理多个收件人（用逗号分隔，转换为 YAML 列表格式）
-            echo "$RECIPIENTS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | sed 's/^/    - "/;s/$/"/'
-          else
-            echo "    []"
-            echo "ℹ️  EMAIL_RECIPIENTS 未配置，将尝试从仓库中的 config.yaml 读取收件人" >&2
-          fi
-          echo "  subject: \"${{ secrets.EMAIL_SUBJECT || '📊 ETF/LOF溢价率排行榜 - {date}' }}\""
-          echo "report:"
-          echo "  top_n: ${{ secrets.REPORT_TOP_N || 100 }}"
-          echo "  only_premium: ${{ secrets.REPORT_ONLY_PREMIUM == 'true' }}"
-          echo "schedule:"
-          echo "  hour: ${{ secrets.SCHEDULE_HOUR || 2 }}"
-          echo "  minute: ${{ secrets.SCHEDULE_MINUTE || 0 }}"
-        } > config.yaml
+        echo "email:" > config.yaml
+        echo "  smtp:" >> config.yaml
+        echo "    host: \"${{ secrets.EMAIL_SMTP_HOST || 'smtp.qq.com' }}\"" >> config.yaml
+        echo "    port: ${{ secrets.EMAIL_SMTP_PORT || 587 }}" >> config.yaml
+        echo "    use_tls: ${{ secrets.EMAIL_SMTP_USE_TLS != 'false' }}" >> config.yaml
+        echo "    username: \"${{ secrets.EMAIL_USERNAME || '' }}\"" >> config.yaml
+        echo "    password: \"${{ secrets.EMAIL_PASSWORD || '' }}\"" >> config.yaml
+        echo "  recipients:" >> config.yaml
+        if [ -n "$RECIPIENTS" ]; then
+          # 处理多个收件人（用逗号分隔，转换为 YAML 列表格式）
+          echo "$RECIPIENTS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | sed 's/^/    - "/;s/$/"/' >> config.yaml
+        else
+          echo "    []" >> config.yaml
+          echo "ℹ️  EMAIL_RECIPIENTS 未配置，将尝试从仓库中的 config.yaml 读取收件人" >&2
+        fi
+        echo "  subject: \"${{ secrets.EMAIL_SUBJECT || '📊 ETF/LOF溢价率排行榜 - {date}' }}\"" >> config.yaml
+        echo "report:" >> config.yaml
+        echo "  top_n: ${{ secrets.REPORT_TOP_N || 100 }}" >> config.yaml
+        echo "  only_premium: ${{ secrets.REPORT_ONLY_PREMIUM == 'true' }}" >> config.yaml
+        echo "schedule:" >> config.yaml
+        echo "  hour: ${{ secrets.SCHEDULE_HOUR || 2 }}" >> config.yaml
+        echo "  minute: ${{ secrets.SCHEDULE_MINUTE || 0 }}" >> config.yaml
         echo "✅ 配置文件已生成"
         
     - name: Generate and send ETF Premium Rate Report
