@@ -532,18 +532,82 @@ def load_config():
         config['email']['subject'] = email_subject_env
     
     # 读取报告配置（环境变量优先）
-    if os.getenv('REPORT_TOP_N'):
+    report_top_n_env = os.getenv('REPORT_TOP_N')
+    if report_top_n_env:
         try:
             if 'report' not in config:
                 config['report'] = {}
-            config['report']['top_n'] = int(os.getenv('REPORT_TOP_N'))
+            config['report']['top_n'] = int(report_top_n_env)
+            print(f"📊 配置读取: REPORT_TOP_N 从环境变量读取: {config['report']['top_n']}")
         except (ValueError, TypeError):
             pass
+    elif 'report' in config and 'top_n' in config['report']:
+        print(f"📊 配置读取: top_n 从 config.yaml 读取: {config['report']['top_n']}")
     
-    if os.getenv('REPORT_ONLY_PREMIUM'):
+    report_only_premium_env = os.getenv('REPORT_ONLY_PREMIUM')
+    if report_only_premium_env:
         if 'report' not in config:
             config['report'] = {}
-        config['report']['only_premium'] = os.getenv('REPORT_ONLY_PREMIUM').lower() == 'true'
+        config['report']['only_premium'] = report_only_premium_env.lower() == 'true'
+        print(f"📊 配置读取: REPORT_ONLY_PREMIUM 从环境变量读取: {config['report']['only_premium']}")
+    elif 'report' in config and 'only_premium' in config['report']:
+        print(f"📊 配置读取: only_premium 从 config.yaml 读取: {config['report']['only_premium']}")
+    
+    # 读取定时任务配置（环境变量优先）
+    schedule_hour_env = os.getenv('SCHEDULE_HOUR')
+    if schedule_hour_env:
+        try:
+            if 'schedule' not in config:
+                config['schedule'] = {}
+            config['schedule']['hour'] = int(schedule_hour_env)
+            print(f"⏰ 配置读取: SCHEDULE_HOUR 从环境变量读取: {config['schedule']['hour']}")
+        except (ValueError, TypeError):
+            pass
+    elif 'schedule' in config and 'hour' in config['schedule']:
+        print(f"⏰ 配置读取: hour 从 config.yaml 读取: {config['schedule']['hour']}")
+    
+    schedule_minute_env = os.getenv('SCHEDULE_MINUTE')
+    if schedule_minute_env:
+        try:
+            if 'schedule' not in config:
+                config['schedule'] = {}
+            config['schedule']['minute'] = int(schedule_minute_env)
+            print(f"⏰ 配置读取: SCHEDULE_MINUTE 从环境变量读取: {config['schedule']['minute']}")
+        except (ValueError, TypeError):
+            pass
+    elif 'schedule' in config and 'minute' in config['schedule']:
+        print(f"⏰ 配置读取: minute 从 config.yaml 读取: {config['schedule']['minute']}")
+    
+    # 清理和验证 recipients 列表（过滤掉 None 和空值）
+    if 'email' in config and 'recipients' in config['email']:
+        recipients = config['email']['recipients']
+        if recipients:
+            print(f"📧 配置读取: 原始收件人列表: {recipients}")
+            # 过滤掉 None、空字符串和非字符串类型
+            cleaned_recipients = [
+                r.strip() for r in recipients 
+                if r is not None and isinstance(r, str) and r.strip()
+            ]
+            if cleaned_recipients:
+                config['email']['recipients'] = cleaned_recipients
+                print(f"📧 配置读取: 清理后的收件人列表: {cleaned_recipients}")
+            else:
+                # 如果清理后为空，删除 recipients，让代码后续报错
+                print("⚠️  警告: 收件人列表清理后为空")
+                # 检查是否是从环境变量读取的（环境变量不存在）
+                if not recipients_env:
+                    print("   提示: EMAIL_RECIPIENTS 环境变量未配置，且 config.yaml 中收件人列表为空")
+                    print("   请配置 GitHub Secrets 中的 EMAIL_RECIPIENTS 或在 config.yaml 中设置收件人")
+                config['email']['recipients'] = []
+        else:
+            # recipients 是空列表或 None
+            if isinstance(recipients, list) and len(recipients) == 0:
+                print("⚠️  警告: 配置中 recipients 为空列表")
+                if not recipients_env:
+                    print("   提示: EMAIL_RECIPIENTS 环境变量未配置，且 config.yaml 中收件人列表为空")
+                    print("   请配置 GitHub Secrets 中的 EMAIL_RECIPIENTS 或在 config.yaml 中设置收件人")
+            else:
+                print("⚠️  警告: 配置中 recipients 不存在或为 None")
     
     return config
 
@@ -848,6 +912,14 @@ def send_email(config, html_content, subject):
         smtp_config = config.get('email', {}).get('smtp', {})
         recipients = config.get('email', {}).get('recipients', [])
         
+        # 调试信息：打印原始 recipients
+        print(f"📧 调试信息: 原始收件人列表: {recipients}")
+        print(f"📧 调试信息: 收件人列表类型: {type(recipients)}")
+        if recipients:
+            print(f"📧 调试信息: 收件人数量: {len(recipients)}")
+            for i, r in enumerate(recipients):
+                print(f"📧 调试信息: 收件人[{i}]: {repr(r)} (类型: {type(r)})")
+        
         # 验证收件人列表
         if not recipients:
             print("❌ 错误: 收件人列表为空，请检查配置")
@@ -855,10 +927,13 @@ def send_email(config, html_content, subject):
             return False
         
         # 过滤掉 None 和空字符串
-        recipients = [r for r in recipients if r and isinstance(r, str) and r.strip()]
+        recipients = [r for r in recipients if r is not None and isinstance(r, str) and r.strip()]
+        
+        print(f"📧 调试信息: 清理后的收件人列表: {recipients}")
         
         if not recipients:
             print("❌ 错误: 收件人列表无效（全部为空或None），请检查配置")
+            print("   请检查 config.yaml 中的 recipients 配置，确保所有邮箱地址都是有效的字符串")
             return False
         
         # 验证必需的 SMTP 配置
