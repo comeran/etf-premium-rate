@@ -430,36 +430,122 @@ def get_etf_data():
     return result_df
 
 def load_config():
-    """加载配置文件"""
-    # 获取脚本所在目录和项目根目录
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)  # src 的父目录就是项目根目录
+    """加载配置文件
+    优先从环境变量（Repository secrets）读取，其次从 config.yaml 读取
+    """
+    config = {}
     
-    # 优先从项目根目录查找配置文件
-    config_paths = [
-        os.path.join(project_root, 'config.yaml'),  # 项目根目录
-        'config.yaml',  # 当前工作目录（兼容性）
-    ]
+    # 优先从环境变量读取配置（GitHub Actions Repository secrets）
+    print("正在从环境变量读取配置...")
+    email_config = {}
+    smtp_config = {}
     
-    config_path = None
-    for path in config_paths:
-        if os.path.exists(path):
-            config_path = path
-            break
+    # 读取所有环境变量
+    recipients_env = os.getenv('EMAIL_RECIPIENTS', '')
+    email_subject_env = os.getenv('EMAIL_SUBJECT', '')
     
-    if config_path is None:
-        print(f"错误: 配置文件 config.yaml 不存在")
-        print(f"请复制 {os.path.join(project_root, 'config.example.yaml')} 为 config.yaml 并填写配置")
-        return None
+    # 读取 SMTP 配置
+    if os.getenv('EMAIL_SMTP_HOST'):
+        smtp_config['host'] = os.getenv('EMAIL_SMTP_HOST')
+    if os.getenv('EMAIL_SMTP_PORT'):
+        try:
+            smtp_config['port'] = int(os.getenv('EMAIL_SMTP_PORT'))
+        except (ValueError, TypeError):
+            pass
+    if os.getenv('EMAIL_SMTP_USE_TLS'):
+        smtp_config['use_tls'] = os.getenv('EMAIL_SMTP_USE_TLS').lower() != 'false'
+    if os.getenv('EMAIL_USERNAME'):
+        smtp_config['username'] = os.getenv('EMAIL_USERNAME')
+    if os.getenv('EMAIL_PASSWORD'):
+        smtp_config['password'] = os.getenv('EMAIL_PASSWORD')
     
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        print(f"✅ 已加载配置文件: {config_path}")
-        return config
-    except Exception as e:
-        print(f"读取配置文件失败: {e}")
-        return None
+    # 读取收件人列表（支持逗号分隔的多个邮箱）
+    if recipients_env:
+        # 处理逗号分隔的邮箱列表
+        recipients = [email.strip() for email in recipients_env.split(',') if email.strip()]
+        if recipients:
+            email_config['recipients'] = recipients
+    
+    # 读取邮件主题
+    if email_subject_env:
+        email_config['subject'] = email_subject_env
+    
+    # 如果从环境变量读取到了完整配置，使用环境变量配置
+    if smtp_config and email_config.get('recipients'):
+        config['email'] = {
+            'smtp': smtp_config,
+            **email_config
+        }
+        print("✅ 已从环境变量加载配置")
+    else:
+        # 从 config.yaml 读取配置
+        print("环境变量配置不完整，尝试从 config.yaml 读取...")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)  # src 的父目录就是项目根目录
+        
+        # 优先从项目根目录查找配置文件
+        config_paths = [
+            os.path.join(project_root, 'config.yaml'),  # 项目根目录
+            'config.yaml',  # 当前工作目录（兼容性）
+        ]
+        
+        config_path = None
+        for path in config_paths:
+            if os.path.exists(path):
+                config_path = path
+                break
+        
+        if config_path is None:
+            print(f"错误: 配置文件 config.yaml 不存在")
+            print(f"请复制 {os.path.join(project_root, 'config.example.yaml')} 为 config.yaml 并填写配置")
+            return None
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                file_config = yaml.safe_load(f)
+                if file_config:
+                    config = file_config
+                    print(f"✅ 已从配置文件加载: {config_path}")
+        except Exception as e:
+            print(f"读取配置文件失败: {e}")
+            return None
+    
+    # 合并环境变量和配置文件（环境变量优先级更高）
+    if smtp_config:
+        if 'email' not in config:
+            config['email'] = {}
+        if 'smtp' not in config['email']:
+            config['email']['smtp'] = {}
+        # 环境变量覆盖配置文件
+        config['email']['smtp'].update(smtp_config)
+    
+    if recipients_env:
+        recipients = [email.strip() for email in recipients_env.split(',') if email.strip()]
+        if recipients:
+            if 'email' not in config:
+                config['email'] = {}
+            config['email']['recipients'] = recipients
+    
+    if email_subject_env:
+        if 'email' not in config:
+            config['email'] = {}
+        config['email']['subject'] = email_subject_env
+    
+    # 读取报告配置（环境变量优先）
+    if os.getenv('REPORT_TOP_N'):
+        try:
+            if 'report' not in config:
+                config['report'] = {}
+            config['report']['top_n'] = int(os.getenv('REPORT_TOP_N'))
+        except (ValueError, TypeError):
+            pass
+    
+    if os.getenv('REPORT_ONLY_PREMIUM'):
+        if 'report' not in config:
+            config['report'] = {}
+        config['report']['only_premium'] = os.getenv('REPORT_ONLY_PREMIUM').lower() == 'true'
+    
+    return config
 
 def generate_email_html(df, top_n=100, only_premium=False):
     """生成HTML格式的邮件内容（针对邮箱优化）"""
@@ -759,8 +845,28 @@ def generate_email_html(df, top_n=100, only_premium=False):
 def send_email(config, html_content, subject):
     """发送邮件"""
     try:
-        smtp_config = config['email']['smtp']
-        recipients = config['email']['recipients']
+        smtp_config = config.get('email', {}).get('smtp', {})
+        recipients = config.get('email', {}).get('recipients', [])
+        
+        # 验证收件人列表
+        if not recipients:
+            print("❌ 错误: 收件人列表为空，请检查配置")
+            print("   请确保在环境变量 EMAIL_RECIPIENTS 或 config.yaml 中配置了收件人")
+            return False
+        
+        # 过滤掉 None 和空字符串
+        recipients = [r for r in recipients if r and isinstance(r, str) and r.strip()]
+        
+        if not recipients:
+            print("❌ 错误: 收件人列表无效（全部为空或None），请检查配置")
+            return False
+        
+        # 验证必需的 SMTP 配置
+        required_fields = ['host', 'port', 'username', 'password']
+        missing_fields = [field for field in required_fields if not smtp_config.get(field)]
+        if missing_fields:
+            print(f"❌ 错误: SMTP 配置缺少必需字段: {', '.join(missing_fields)}")
+            return False
         
         # 创建邮件
         msg = MIMEMultipart('alternative')
