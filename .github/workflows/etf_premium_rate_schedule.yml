@@ -4,7 +4,7 @@ on:
   schedule:
     # 默认每天 UTC 时间 3:00 (北京时间 11:00) 运行
     # 实际时间从 config.yaml 中读取，但 GitHub Actions 的 cron 需要在这里设置
-    - cron: '20 3 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:  # 允许手动触发
 
 jobs:
