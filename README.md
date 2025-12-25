@@ -80,7 +80,8 @@ python src/etf_premium_rate.py
 
 - `email`: 邮件发送配置（SMTP服务器、账号、收件人等）
 - `report`: 报告配置（排行榜数量、是否只发送溢价等）
-- `schedule`: 定时任务配置（发送时间）
+
+**注意：** 定时任务配置在 `.github/workflows/etf_premium_rate_schedule.yml` 文件中设置，不在 `config.yaml` 中配置。
 
 详细配置说明请参考 `config.example.yaml`
 
