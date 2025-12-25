@@ -16,7 +16,7 @@
 
 ```bash
 # 在项目根目录下执行
-cd /Users/zane/Documents/Bigo/etf-premium-rate
+cd <项目目录>
 
 git init
 git add .

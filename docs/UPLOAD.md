@@ -2,9 +2,9 @@
 
 ## 📁 项目位置
 
-所有文件已组织好，位于：
+所有文件已组织好，位于项目根目录：
 ```
-/Users/zane/Documents/Bigo/etf-premium-rate/
+<项目目录>/
 ```
 
 ## 📋 项目结构
@@ -31,7 +31,7 @@ etf-premium-rate/
 
 ```bash
 # 1. 进入项目目录
-cd /Users/zane/Documents/Bigo/etf-premium-rate
+cd <项目目录>
 
 # 2. 初始化 Git 仓库
 git init
@@ -54,7 +54,7 @@ git push -u origin main
 
 1. 打开 GitHub Desktop
 2. 点击 `File` → `Add Local Repository`
-3. 选择 `/Users/zane/Documents/Bigo/etf-premium-rate` 文件夹
+3. 选择项目根目录文件夹
 4. 点击 `Publish repository` 上传
 
 ### 方法三：使用 GitHub 网页
