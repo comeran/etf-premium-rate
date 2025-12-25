@@ -32,9 +32,6 @@ report:
   # 是否只发送溢价率最高的（不发送最低的）
   only_premium: false
 
-# 定时任务配置（用于GitHub Actions）
-schedule:
-  # 每天发送时间（UTC时间）
-  hour: 2  # UTC 2:00 = 北京时间 10:00
-  minute: 0
+# 注意：定时任务配置在 .github/workflows/etf_premium_rate_schedule.yml 中设置
+# 不需要在此配置文件中设置 schedule
 

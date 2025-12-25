@@ -50,9 +50,6 @@ jobs:
         echo "report:" >> config.yaml
         echo "  top_n: ${{ secrets.REPORT_TOP_N || 100 }}" >> config.yaml
         echo "  only_premium: ${{ secrets.REPORT_ONLY_PREMIUM == 'true' }}" >> config.yaml
-        echo "schedule:" >> config.yaml
-        echo "  hour: ${{ secrets.SCHEDULE_HOUR || 2 }}" >> config.yaml
-        echo "  minute: ${{ secrets.SCHEDULE_MINUTE || 0 }}" >> config.yaml
         echo "✅ 配置文件已生成"
         
     - name: Generate and send ETF Premium Rate Report

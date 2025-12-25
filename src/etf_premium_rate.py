@@ -553,30 +553,6 @@ def load_config():
     elif 'report' in config and 'only_premium' in config['report']:
         print(f"📊 配置读取: only_premium 从 config.yaml 读取: {config['report']['only_premium']}")
     
-    # 读取定时任务配置（环境变量优先）
-    schedule_hour_env = os.getenv('SCHEDULE_HOUR')
-    if schedule_hour_env:
-        try:
-            if 'schedule' not in config:
-                config['schedule'] = {}
-            config['schedule']['hour'] = int(schedule_hour_env)
-            print(f"⏰ 配置读取: SCHEDULE_HOUR 从环境变量读取: {config['schedule']['hour']}")
-        except (ValueError, TypeError):
-            pass
-    elif 'schedule' in config and 'hour' in config['schedule']:
-        print(f"⏰ 配置读取: hour 从 config.yaml 读取: {config['schedule']['hour']}")
-    
-    schedule_minute_env = os.getenv('SCHEDULE_MINUTE')
-    if schedule_minute_env:
-        try:
-            if 'schedule' not in config:
-                config['schedule'] = {}
-            config['schedule']['minute'] = int(schedule_minute_env)
-            print(f"⏰ 配置读取: SCHEDULE_MINUTE 从环境变量读取: {config['schedule']['minute']}")
-        except (ValueError, TypeError):
-            pass
-    elif 'schedule' in config and 'minute' in config['schedule']:
-        print(f"⏰ 配置读取: minute 从 config.yaml 读取: {config['schedule']['minute']}")
     
     # 清理和验证 recipients 列表（过滤掉 None 和空值）
     if 'email' in config and 'recipients' in config['email']:
