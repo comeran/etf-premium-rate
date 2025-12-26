@@ -5,23 +5,13 @@ on:
     # 每天北京时间 11:00 (UTC 03:00) 和 14:15 (UTC 06:15) 运行
     - cron: '0 3 * * *'  # 北京时间 11:00
     - cron: '15 6 * * *'  # 北京时间 14:15
-    # 临时测试：每小时执行一次（用于验证每天执行的 schedule 是否正常工作）
-    - cron: '0 * * * *'  # 每小时整点执行（UTC时间），用于测试
   workflow_dispatch:  # 允许手动触发
 
 jobs:
   generate-report:
     runs-on: ubuntu-latest
-    env:
-      TZ: Asia/Shanghai  # 设置工作流运行时使用北京时间
     
     steps:
-    - name: Display timezone info
-      run: |
-        echo "当前 UTC 时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-        echo "当前北京时间: $(date '+%Y-%m-%d %H:%M:%S %Z')"
-        echo "时区设置: $TZ"
-    
     - name: Checkout repository
       uses: actions/checkout@v4
       

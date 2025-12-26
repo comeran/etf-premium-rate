@@ -24,7 +24,7 @@ ETF/LOF溢价率报告生成器
 import pandas as pd
 import akshare as ak
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import sys
 import yaml
 import smtplib
@@ -480,35 +480,35 @@ def load_config():
     else:
         # 从 config.yaml 读取配置
         print("环境变量配置不完整，尝试从 config.yaml 读取...")
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(script_dir)  # src 的父目录就是项目根目录
-        
-        # 优先从项目根目录查找配置文件
-        config_paths = [
-            os.path.join(project_root, 'config.yaml'),  # 项目根目录
-            'config.yaml',  # 当前工作目录（兼容性）
-        ]
-        
-        config_path = None
-        for path in config_paths:
-            if os.path.exists(path):
-                config_path = path
-                break
-        
-        if config_path is None:
-            print(f"错误: 配置文件 config.yaml 不存在")
-            print(f"请复制 {os.path.join(project_root, 'config.example.yaml')} 为 config.yaml 并填写配置")
-            return None
-        
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)  # src 的父目录就是项目根目录
+    
+    # 优先从项目根目录查找配置文件
+    config_paths = [
+        os.path.join(project_root, 'config.yaml'),  # 项目根目录
+        'config.yaml',  # 当前工作目录（兼容性）
+    ]
+    
+    config_path = None
+    for path in config_paths:
+        if os.path.exists(path):
+            config_path = path
+            break
+    
+    if config_path is None:
+        print(f"错误: 配置文件 config.yaml 不存在")
+        print(f"请复制 {os.path.join(project_root, 'config.example.yaml')} 为 config.yaml 并填写配置")
+        return None
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
                 file_config = yaml.safe_load(f)
                 if file_config:
                     config = file_config
                     print(f"✅ 已从配置文件加载: {config_path}")
-        except Exception as e:
-            print(f"读取配置文件失败: {e}")
-            return None
+    except Exception as e:
+        print(f"读取配置文件失败: {e}")
+        return None
     
     # 合并环境变量和配置文件（环境变量优先级更高）
     if smtp_config:
@@ -594,7 +594,9 @@ def generate_email_html(df, top_n=100, only_premium=False):
     
     # 按溢价率排序
     df_sorted = df.sort_values('溢价率', ascending=False)
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 使用东八区时间（北京时间）
+    beijing_tz = timezone(timedelta(hours=8))
+    timestamp = datetime.now(beijing_tz).strftime("%Y-%m-%d %H:%M:%S")
     
     # 计算统计数据
     total_count = len(df)
@@ -980,8 +982,9 @@ def main():
         print(f"\n正在生成邮件内容（Top {top_n}）...")
         html_content = generate_email_html(df, top_n=top_n, only_premium=only_premium)
         
-        # 生成邮件主题
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        # 生成邮件主题（使用东八区时间）
+        beijing_tz = timezone(timedelta(hours=8))
+        date_str = datetime.now(beijing_tz).strftime("%Y-%m-%d")
         subject_template = config.get('email', {}).get('subject', '📊 ETF/LOF溢价率排行榜 - {date}')
         subject = subject_template.format(date=date_str)
         
