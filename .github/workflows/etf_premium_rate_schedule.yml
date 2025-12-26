@@ -2,9 +2,9 @@ name: ETF Premium Rate Report
 
 on:
   schedule:
-    # 每天北京时间 11:00 (UTC 03:00) 和 14:15 (UTC 06:15) 运行
-    - cron: '0 3 * * *'  # 北京时间 11:00
-    - cron: '15 6 * * *'  # 北京时间 14:15
+    # 每天北京时间 10:34 (UTC 02:34) 和 14:17 (UTC 06:17) 运行
+    - cron: '34 2 * * *'  # 北京时间 10:34
+    - cron: '17 6 * * *'  # 北京时间 14:17
   workflow_dispatch:  # 允许手动触发
 
 jobs:
