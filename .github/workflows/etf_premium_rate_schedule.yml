@@ -12,8 +12,16 @@ on:
 jobs:
   generate-report:
     runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai  # 设置工作流运行时使用北京时间
     
     steps:
+    - name: Display timezone info
+      run: |
+        echo "当前 UTC 时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "当前北京时间: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+        echo "时区设置: $TZ"
+    
     - name: Checkout repository
       uses: actions/checkout@v4
       
