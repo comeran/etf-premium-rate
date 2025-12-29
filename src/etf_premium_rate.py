@@ -270,6 +270,19 @@ def get_etf_data():
             if pd.isna(spot_price) or spot_price is None or spot_price == 0:
                 continue
             
+            # 获取交易量（成交量）
+            volume = None
+            for col in ['成交量', '成交额', '成交金额', '量', 'volume', '总手', '成交手数', '成交数量']:
+                if col in row.index:
+                    volume_value = row[col]
+                    if not pd.isna(volume_value) and volume_value is not None:
+                        try:
+                            volume = float(volume_value)
+                            if volume > 0:
+                                break
+                        except (ValueError, TypeError):
+                            continue
+            
             # 查找对应的净值（场外价格）
             nav_price = None
             
@@ -412,6 +425,7 @@ def get_etf_data():
                 '场内价格': round(float(spot_price), 4),
                 '场外价格': round(float(nav_price), 4),
                 '溢价率': premium_rate,
+                '交易量': volume if volume is not None and volume > 0 else 0,
                 '申购状态': purchase_limit,
                 '赎回状态': redeem_status if redeem_status else '未知',
                 '手续费': fee_rate if fee_rate else '未知'
@@ -771,6 +785,7 @@ def generate_email_html(df, top_n=100, only_premium=False):
                     <th>场内价</th>
                     <th>场外价</th>
                     <th>溢价率</th>
+                    <th>交易量</th>
                     <th>申购状态</th>
                     <th>赎回状态</th>
                     <th>手续费</th>
@@ -796,6 +811,18 @@ def generate_email_html(df, top_n=100, only_premium=False):
         elif premium_rate < 0:
             premium_str = f"🔻 {premium_str}"
         
+        # 格式化交易量显示
+        volume_value = row.get('交易量', 0)
+        if volume_value and volume_value > 0:
+            if volume_value >= 100000000:
+                volume_str = f"{volume_value/100000000:.2f}亿"
+            elif volume_value >= 10000:
+                volume_str = f"{volume_value/10000:.2f}万"
+            else:
+                volume_str = f"{volume_value:.0f}"
+        else:
+            volume_str = "-"
+        
         html += f"""                <tr>
                     <td>{idx}</td>
                     <td>{fund_name}</td>
@@ -804,6 +831,7 @@ def generate_email_html(df, top_n=100, only_premium=False):
                     <td>{row['场内价格']:.4f}</td>
                     <td>{row['场外价格']:.4f}</td>
                     <td class="{premium_class}">{premium_str}</td>
+                    <td>{volume_str}</td>
                     <td>{purchase_status}</td>
                     <td>{redeem_status}</td>
                     <td>{fee_rate}</td>
@@ -828,6 +856,7 @@ def generate_email_html(df, top_n=100, only_premium=False):
                     <th>场内价</th>
                     <th>场外价</th>
                     <th>溢价率</th>
+                    <th>交易量</th>
                     <th>申购状态</th>
                     <th>赎回状态</th>
                     <th>手续费</th>
@@ -852,6 +881,18 @@ def generate_email_html(df, top_n=100, only_premium=False):
             elif premium_rate < 0:
                 premium_str = f"🔻 {premium_str}"
             
+            # 格式化交易量显示
+            volume_value = row.get('交易量', 0)
+            if volume_value and volume_value > 0:
+                if volume_value >= 100000000:
+                    volume_str = f"{volume_value/100000000:.2f}亿"
+                elif volume_value >= 10000:
+                    volume_str = f"{volume_value/10000:.2f}万"
+                else:
+                    volume_str = f"{volume_value:.0f}"
+            else:
+                volume_str = "-"
+            
             html += f"""                <tr>
                     <td>{idx}</td>
                     <td>{fund_name}</td>
@@ -860,6 +901,7 @@ def generate_email_html(df, top_n=100, only_premium=False):
                     <td>{row['场内价格']:.4f}</td>
                     <td>{row['场外价格']:.4f}</td>
                     <td class="{premium_class}">{premium_str}</td>
+                    <td>{volume_str}</td>
                     <td>{purchase_status}</td>
                     <td>{redeem_status}</td>
                     <td>{fee_rate}</td>
