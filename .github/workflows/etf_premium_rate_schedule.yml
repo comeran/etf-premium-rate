@@ -2,9 +2,9 @@ name: ETF Premium Rate Report
 
 on:
   schedule:
-    # 每天北京时间 10:34 (UTC 02:34) 和 14:17 (UTC 06:17) 运行
-    - cron: '34 2 * * *'  # 北京时间 10:34
-    - cron: '17 6 * * *'  # 北京时间 14:17
+    # 每天北京时间 10:00 (UTC 02:00) 和 14:00 (UTC 06:00) 运行
+    - cron: '0 2 * * *'  # 北京时间 10:00
+    - cron: '0 6 * * *'  # 北京时间 14:00
   workflow_dispatch:  # 允许手动触发
 
 jobs:
@@ -55,4 +55,3 @@ jobs:
     - name: Generate and send ETF Premium Rate Report
       run: |
         python src/etf_premium_rate.py
-
