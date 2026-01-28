@@ -139,7 +139,7 @@ def get_etf_realtime_data():
 def get_lof_realtime_data():
     """获取LOF基金实时行情数据（场内价格）
     
-    注意：失败时会自动重试（最多3次尝试）
+    注意：此函数会尝试从东方财富获取数据，失败时会抛出异常
     """
     print("正在获取LOF基金实时行情数据...")
     try:
