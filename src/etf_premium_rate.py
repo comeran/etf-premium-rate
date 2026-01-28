@@ -32,6 +32,47 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
 import os
+from functools import wraps
+import socket
+
+# 设置全局socket超时时间（30秒），避免请求长时间挂起
+socket.setdefaulttimeout(30)
+
+def retry_on_failure(max_retries=3, delay=2, backoff=2, exceptions=(Exception,)):
+    """
+    装饰器：在函数失败时自动重试
+    
+    Args:
+        max_retries: 最大重试次数
+        delay: 初始延迟时间（秒）
+        backoff: 延迟时间的倍数增长因子
+        exceptions: 需要捕获并重试的异常类型元组
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            current_delay = delay
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_retries:
+                        print(f"  尝试 {attempt + 1}/{max_retries + 1} 失败: {str(e)[:100]}...")
+                        print(f"  等待 {current_delay:.1f} 秒后重试...")
+                        time.sleep(current_delay)
+                        current_delay *= backoff
+                    else:
+                        print(f"  所有 {max_retries + 1} 次尝试均失败")
+            
+            # 如果所有重试都失败，抛出最后一个异常
+            if last_exception:
+                raise last_exception
+        
+        return wrapper
+    return decorator
 
 def get_etf_list():
     """获取ETF基金列表"""
@@ -50,38 +91,53 @@ def get_etf_list():
             print(f"备用方案也失败: {e2}")
             return None
 
+@retry_on_failure(max_retries=3, delay=3, backoff=2)
 def get_etf_realtime_data():
     """获取ETF实时行情数据（场内价格）"""
     print("正在获取ETF实时行情数据...")
+    errors = []
+    
+    # 方法1: 获取ETF实时行情
     try:
-        # 方法1: 获取ETF实时行情
         df = ak.fund_etf_spot_em()
         if df is not None and not df.empty:
+            print(f"✓ 方法1成功获取 {len(df)} 条ETF数据")
             return df
     except Exception as e:
-        print(f"方法1获取实时行情失败: {e}")
+        error_msg = f"方法1失败: {str(e)[:200]}"
+        print(f"  {error_msg}")
+        errors.append(error_msg)
     
+    # 方法2: 备用方案 - 使用新浪接口
     try:
-        # 方法2: 备用方案 - 使用新浪接口
         df = ak.fund_etf_hist_sina()
         if df is not None and not df.empty:
+            print(f"✓ 方法2成功获取 {len(df)} 条ETF数据")
             return df
     except Exception as e:
-        print(f"方法2获取实时行情失败: {e}")
+        error_msg = f"方法2失败: {str(e)[:200]}"
+        print(f"  {error_msg}")
+        errors.append(error_msg)
     
-    return None
+    # 所有方法都失败，抛出异常以触发重试
+    error_summary = "; ".join(errors)
+    raise Exception(f"所有ETF数据获取方法失败: {error_summary}")
 
+@retry_on_failure(max_retries=3, delay=3, backoff=2)
 def get_lof_realtime_data():
     """获取LOF基金实时行情数据（场内价格）"""
     print("正在获取LOF基金实时行情数据...")
     try:
         df = ak.fund_lof_spot_em()
         if df is not None and not df.empty:
+            print(f"✓ 成功获取 {len(df)} 条LOF数据")
             return df
+        else:
+            raise Exception("LOF数据为空")
     except Exception as e:
-        print(f"获取LOF基金实时行情失败: {e}")
-        return None
-    return None
+        error_msg = f"获取LOF失败: {str(e)[:200]}"
+        print(f"  {error_msg}")
+        raise Exception(error_msg)
 
 def get_etf_nav_data():
     """获取ETF净值数据（场外价格）"""
@@ -185,26 +241,48 @@ def get_etf_data():
     print("=" * 60)
     
     # 获取ETF实时行情（场内价格）
-    etf_df = get_etf_realtime_data()
-    if etf_df is None or etf_df.empty:
+    etf_df = pd.DataFrame()
+    try:
+        etf_df = get_etf_realtime_data()
+        if etf_df is not None and not etf_df.empty:
+            print(f"✅ 获取到 {len(etf_df)} 条ETF实时行情数据")
+            etf_df['基金类型'] = 'ETF'
+        else:
+            etf_df = pd.DataFrame()
+            print("⚠️  ETF实时行情数据为空")
+    except Exception as e:
         etf_df = pd.DataFrame()
-        print("无法获取ETF实时行情数据")
-    else:
-        print(f"获取到 {len(etf_df)} 条ETF实时行情数据")
-        etf_df['基金类型'] = 'ETF'
+        print(f"⚠️  无法获取ETF实时行情数据: {str(e)[:100]}")
     
     # 获取LOF基金实时行情（场内价格）
-    lof_df = get_lof_realtime_data()
-    if lof_df is None or lof_df.empty:
+    lof_df = pd.DataFrame()
+    try:
+        lof_df = get_lof_realtime_data()
+        if lof_df is not None and not lof_df.empty:
+            print(f"✅ 获取到 {len(lof_df)} 条LOF基金实时行情数据")
+            lof_df['基金类型'] = 'LOF'
+        else:
+            lof_df = pd.DataFrame()
+            print("⚠️  LOF基金实时行情数据为空")
+    except Exception as e:
         lof_df = pd.DataFrame()
-        print("无法获取LOF基金实时行情数据")
-    else:
-        print(f"获取到 {len(lof_df)} 条LOF基金实时行情数据")
-        lof_df['基金类型'] = 'LOF'
+        print(f"⚠️  无法获取LOF基金实时行情数据: {str(e)[:100]}")
     
     # 合并ETF和LOF数据
     if etf_df.empty and lof_df.empty:
-        print("无法获取任何基金数据")
+        print("\n" + "=" * 60)
+        print("❌ 错误：无法获取任何基金数据")
+        print("=" * 60)
+        print("\n可能的原因：")
+        print("1. 网络连接问题 - 请检查网络连接")
+        print("2. API服务暂时不可用 - 请稍后重试")
+        print("3. DNS解析失败 - 请检查DNS设置")
+        print("4. 防火墙或代理阻止了请求")
+        print("\n建议：")
+        print("- 稍后再试（等待几分钟后重新运行）")
+        print("- 检查是否能访问 push2.eastmoney.com")
+        print("- 检查是否能访问 finance.sina.com.cn")
+        print("=" * 60 + "\n")
         return None
     
     if not etf_df.empty and not lof_df.empty:
@@ -1011,7 +1089,8 @@ def main():
         df = get_etf_data()
         
         if df is None or df.empty:
-            print("❌ 未能获取到ETF数据，请检查网络连接或稍后重试")
+            print("\n❌ 未能获取到有效的ETF/LOF数据")
+            print("   请检查上述错误信息以了解详细原因")
             return
         
         print(f"✅ 成功获取 {len(df)} 条基金数据（包含ETF和LOF）")
