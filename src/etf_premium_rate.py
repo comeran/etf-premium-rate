@@ -118,38 +118,28 @@ def get_etf_list():
 def get_etf_realtime_data():
     """获取ETF实时行情数据（场内价格）
     
-    注意：此函数会尝试多个数据源，失败时会自动重试（最多3次尝试）
+    注意：此函数会尝试从东方财富获取数据，失败时会抛出异常
     """
     print("正在获取ETF实时行情数据...")
     
-    # 方法1: 获取ETF实时行情
+    # 获取ETF实时行情
     try:
         df = ak.fund_etf_spot_em()
         if df is not None and not df.empty:
-            print(f"✓ 方法1成功获取 {len(df)} 条ETF数据")
+            print(f"✓ 成功获取 {len(df)} 条ETF数据")
             return df
+        else:
+            raise Exception("ETF数据为空")
     except Exception as e:
-        error_msg = safe_truncate(f"方法1: {str(e)}", 150)
-        print(f"  {error_msg}")
-    
-    # 方法2: 备用方案 - 使用新浪接口
-    try:
-        df = ak.fund_etf_hist_sina()
-        if df is not None and not df.empty:
-            print(f"✓ 方法2成功获取 {len(df)} 条ETF数据")
-            return df
-    except Exception as e:
-        error_msg = safe_truncate(f"方法2: {str(e)}", 150)
-        print(f"  {error_msg}")
-    
-    # 所有方法都失败，抛出异常以触发重试
-    raise Exception("ETF数据获取失败")
+        error_msg = safe_truncate(str(e), 150)
+        print(f"  ETF获取失败: {error_msg}")
+        raise
 
 @retry_on_failure(max_retries=2, delay=3, backoff=2)
 def get_lof_realtime_data():
     """获取LOF基金实时行情数据（场内价格）
     
-    注意：失败时会自动重试（最多3次尝试）
+    注意：此函数会尝试从东方财富获取数据，失败时会抛出异常
     """
     print("正在获取LOF基金实时行情数据...")
     try:
@@ -336,11 +326,19 @@ def get_etf_data():
     
     # 数据清洗和合并
     result_list = []
+    skipped_stats = {
+        'no_code_or_name': 0,
+        'no_spot_price': 0,
+        'no_nav_price': 0,
+        'premium_calc_failed': 0,
+        'other_errors': 0
+    }
     
     # 预先获取净值数据缓存（包含申购赎回状态和手续费信息）
     print("正在获取基金净值及申购赎回信息...")
     get_all_fund_nav()  # 预加载净值数据
     
+    print(f"开始处理 {len(spot_df)} 条实时行情数据...")
     # 处理实时行情数据
     for idx, row in spot_df.iterrows():
         try:
@@ -360,6 +358,7 @@ def get_etf_data():
                     break
             
             if not code or not name:
+                skipped_stats['no_code_or_name'] += 1
                 continue
             
             # 获取场内价格
@@ -371,6 +370,7 @@ def get_etf_data():
                         break
             
             if pd.isna(spot_price) or spot_price is None or spot_price == 0:
+                skipped_stats['no_spot_price'] += 1
                 continue
             
             # 获取交易量（成交量）
@@ -415,11 +415,13 @@ def get_etf_data():
                         time.sleep(0.1)  # 避免API调用过快
             
             if pd.isna(nav_price) or nav_price is None or nav_price == 0:
+                skipped_stats['no_nav_price'] += 1
                 continue
             
             # 计算溢价率
             premium_rate = calculate_premium_rate(spot_price, nav_price)
             if premium_rate is None:
+                skipped_stats['premium_calc_failed'] += 1
                 continue
             
             # 获取基金类型
@@ -536,14 +538,26 @@ def get_etf_data():
             
         except Exception as e:
             # 静默跳过错误数据
+            skipped_stats['other_errors'] += 1
             continue
     
+    # 打印处理统计信息
+    print(f"\n数据处理统计:")
+    print(f"  成功处理: {len(result_list)} 条")
+    print(f"  跳过原因:")
+    print(f"    - 缺少代码或名称: {skipped_stats['no_code_or_name']} 条")
+    print(f"    - 缺少场内价格: {skipped_stats['no_spot_price']} 条")
+    print(f"    - 缺少场外价格(净值): {skipped_stats['no_nav_price']} 条")
+    print(f"    - 溢价率计算失败: {skipped_stats['premium_calc_failed']} 条")
+    print(f"    - 其他错误: {skipped_stats['other_errors']} 条")
+    
     if not result_list:
-        print("未能获取到有效数据")
+        print("\n❌ 未能获取到有效数据")
+        print("   所有记录都被过滤掉了，请检查数据源和列名是否匹配")
         return None
     
     result_df = pd.DataFrame(result_list)
-    print(f"成功处理 {len(result_df)} 条有效ETF数据")
+    print(f"\n✅ 成功处理 {len(result_df)} 条有效ETF数据")
     return result_df
 
 def load_config():
