@@ -36,37 +36,24 @@ from functools import wraps
 import socket
 
 # 设置全局socket超时时间（30秒），避免请求长时间挂起
+# 注意：这会影响整个Python进程中的所有socket连接
+# 如果此模块被导入到其他应用中，需要注意这个全局设置的影响
 socket.setdefaulttimeout(30)
 
 def safe_truncate(text, max_length=100):
     """
-    安全截断字符串，避免在UTF-8多字节字符中间截断
+    安全截断字符串
     
     Args:
         text: 要截断的字符串
-        max_length: 最大长度
+        max_length: 最大字符长度
     
     Returns:
-        截断后的字符串
+        截断后的字符串，如果被截断则添加"..."后缀
     """
     if not text or len(text) <= max_length:
         return text
-    
-    # 截断到max_length，然后去掉可能被截断的最后一个字符
-    truncated = text[:max_length]
-    # 确保不在多字节字符中间截断
-    try:
-        truncated.encode('utf-8')
-        return truncated + "..."
-    except UnicodeEncodeError:
-        # 如果截断位置导致编码错误，向前回退直到找到有效位置
-        for i in range(len(truncated) - 1, max(0, len(truncated) - 4), -1):
-            try:
-                truncated[:i].encode('utf-8')
-                return truncated[:i] + "..."
-            except UnicodeEncodeError:
-                continue
-        return text[:max(0, max_length - 10)] + "..."
+    return text[:max_length] + "..."
 
 def retry_on_failure(max_retries=2, delay=2, backoff=2, exceptions=(Exception,)):
     """
@@ -134,7 +121,6 @@ def get_etf_realtime_data():
     注意：此函数会尝试多个数据源，失败时会自动重试（最多3次尝试）
     """
     print("正在获取ETF实时行情数据...")
-    errors = []
     
     # 方法1: 获取ETF实时行情
     try:
@@ -145,7 +131,6 @@ def get_etf_realtime_data():
     except Exception as e:
         error_msg = safe_truncate(f"方法1: {str(e)}", 150)
         print(f"  {error_msg}")
-        errors.append(error_msg)
     
     # 方法2: 备用方案 - 使用新浪接口
     try:
@@ -156,7 +141,6 @@ def get_etf_realtime_data():
     except Exception as e:
         error_msg = safe_truncate(f"方法2: {str(e)}", 150)
         print(f"  {error_msg}")
-        errors.append(error_msg)
     
     # 所有方法都失败，抛出异常以触发重试
     raise Exception("ETF数据获取失败")
@@ -282,7 +266,6 @@ def get_etf_data():
     print("=" * 60)
     
     # 获取ETF实时行情（场内价格）
-    etf_df = pd.DataFrame()
     try:
         etf_df = get_etf_realtime_data()
         if etf_df is not None and not etf_df.empty:
@@ -290,14 +273,13 @@ def get_etf_data():
             etf_df['基金类型'] = 'ETF'
         else:
             etf_df = pd.DataFrame()
-            print("⚠️  ETF实时行情数据为空")
+            print("⚠️ ETF实时行情数据为空")
     except Exception as e:
         etf_df = pd.DataFrame()
         error_msg = safe_truncate(str(e), 100)
-        print(f"⚠️  无法获取ETF实时行情数据: {error_msg}")
+        print(f"⚠️ 无法获取ETF实时行情数据: {error_msg}")
     
     # 获取LOF基金实时行情（场内价格）
-    lof_df = pd.DataFrame()
     try:
         lof_df = get_lof_realtime_data()
         if lof_df is not None and not lof_df.empty:
@@ -305,11 +287,11 @@ def get_etf_data():
             lof_df['基金类型'] = 'LOF'
         else:
             lof_df = pd.DataFrame()
-            print("⚠️  LOF基金实时行情数据为空")
+            print("⚠️ LOF基金实时行情数据为空")
     except Exception as e:
         lof_df = pd.DataFrame()
         error_msg = safe_truncate(str(e), 100)
-        print(f"⚠️  无法获取LOF基金实时行情数据: {error_msg}")
+        print(f"⚠️ 无法获取LOF基金实时行情数据: {error_msg}")
     
     # 合并ETF和LOF数据
     if etf_df.empty and lof_df.empty:
