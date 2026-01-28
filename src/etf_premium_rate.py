@@ -38,16 +38,49 @@ import socket
 # 设置全局socket超时时间（30秒），避免请求长时间挂起
 socket.setdefaulttimeout(30)
 
-def retry_on_failure(max_retries=3, delay=2, backoff=2, exceptions=(Exception,)):
+def safe_truncate(text, max_length=100):
+    """
+    安全截断字符串，避免在UTF-8多字节字符中间截断
+    
+    Args:
+        text: 要截断的字符串
+        max_length: 最大长度
+    
+    Returns:
+        截断后的字符串
+    """
+    if not text or len(text) <= max_length:
+        return text
+    
+    # 截断到max_length，然后去掉可能被截断的最后一个字符
+    truncated = text[:max_length]
+    # 确保不在多字节字符中间截断
+    try:
+        truncated.encode('utf-8')
+        return truncated + "..."
+    except UnicodeEncodeError:
+        # 如果截断位置导致编码错误，向前回退直到找到有效位置
+        for i in range(len(truncated) - 1, max(0, len(truncated) - 4), -1):
+            try:
+                truncated[:i].encode('utf-8')
+                return truncated[:i] + "..."
+            except UnicodeEncodeError:
+                continue
+        return text[:max(0, max_length - 10)] + "..."
+
+def retry_on_failure(max_retries=2, delay=2, backoff=2, exceptions=(Exception,)):
     """
     装饰器：在函数失败时自动重试
     
     Args:
-        max_retries: 最大重试次数
+        max_retries: 最大重试次数（默认2次，加上初始尝试共3次）
         delay: 初始延迟时间（秒）
         backoff: 延迟时间的倍数增长因子
         exceptions: 需要捕获并重试的异常类型元组
     """
+    if max_retries < 0:
+        max_retries = 0
+    
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -60,7 +93,8 @@ def retry_on_failure(max_retries=3, delay=2, backoff=2, exceptions=(Exception,))
                 except exceptions as e:
                     last_exception = e
                     if attempt < max_retries:
-                        print(f"  尝试 {attempt + 1}/{max_retries + 1} 失败: {str(e)[:100]}...")
+                        error_msg = safe_truncate(str(e), 100)
+                        print(f"  尝试 {attempt + 1}/{max_retries + 1} 失败: {error_msg}")
                         print(f"  等待 {current_delay:.1f} 秒后重试...")
                         time.sleep(current_delay)
                         current_delay *= backoff
@@ -70,6 +104,8 @@ def retry_on_failure(max_retries=3, delay=2, backoff=2, exceptions=(Exception,))
             # 如果所有重试都失败，抛出最后一个异常
             if last_exception:
                 raise last_exception
+            # 理论上不应该到这里，但以防万一
+            raise Exception("重试失败但没有捕获到异常")
         
         return wrapper
     return decorator
@@ -91,9 +127,12 @@ def get_etf_list():
             print(f"备用方案也失败: {e2}")
             return None
 
-@retry_on_failure(max_retries=3, delay=3, backoff=2)
+@retry_on_failure(max_retries=2, delay=3, backoff=2)
 def get_etf_realtime_data():
-    """获取ETF实时行情数据（场内价格）"""
+    """获取ETF实时行情数据（场内价格）
+    
+    注意：此函数会尝试多个数据源，失败时会自动重试（最多3次尝试）
+    """
     print("正在获取ETF实时行情数据...")
     errors = []
     
@@ -104,7 +143,7 @@ def get_etf_realtime_data():
             print(f"✓ 方法1成功获取 {len(df)} 条ETF数据")
             return df
     except Exception as e:
-        error_msg = f"方法1失败: {str(e)[:200]}"
+        error_msg = safe_truncate(f"方法1: {str(e)}", 150)
         print(f"  {error_msg}")
         errors.append(error_msg)
     
@@ -115,17 +154,19 @@ def get_etf_realtime_data():
             print(f"✓ 方法2成功获取 {len(df)} 条ETF数据")
             return df
     except Exception as e:
-        error_msg = f"方法2失败: {str(e)[:200]}"
+        error_msg = safe_truncate(f"方法2: {str(e)}", 150)
         print(f"  {error_msg}")
         errors.append(error_msg)
     
     # 所有方法都失败，抛出异常以触发重试
-    error_summary = "; ".join(errors)
-    raise Exception(f"所有ETF数据获取方法失败: {error_summary}")
+    raise Exception("ETF数据获取失败")
 
-@retry_on_failure(max_retries=3, delay=3, backoff=2)
+@retry_on_failure(max_retries=2, delay=3, backoff=2)
 def get_lof_realtime_data():
-    """获取LOF基金实时行情数据（场内价格）"""
+    """获取LOF基金实时行情数据（场内价格）
+    
+    注意：失败时会自动重试（最多3次尝试）
+    """
     print("正在获取LOF基金实时行情数据...")
     try:
         df = ak.fund_lof_spot_em()
@@ -135,9 +176,9 @@ def get_lof_realtime_data():
         else:
             raise Exception("LOF数据为空")
     except Exception as e:
-        error_msg = f"获取LOF失败: {str(e)[:200]}"
-        print(f"  {error_msg}")
-        raise Exception(error_msg)
+        error_msg = safe_truncate(str(e), 150)
+        print(f"  LOF获取失败: {error_msg}")
+        raise
 
 def get_etf_nav_data():
     """获取ETF净值数据（场外价格）"""
@@ -252,7 +293,8 @@ def get_etf_data():
             print("⚠️  ETF实时行情数据为空")
     except Exception as e:
         etf_df = pd.DataFrame()
-        print(f"⚠️  无法获取ETF实时行情数据: {str(e)[:100]}")
+        error_msg = safe_truncate(str(e), 100)
+        print(f"⚠️  无法获取ETF实时行情数据: {error_msg}")
     
     # 获取LOF基金实时行情（场内价格）
     lof_df = pd.DataFrame()
@@ -266,7 +308,8 @@ def get_etf_data():
             print("⚠️  LOF基金实时行情数据为空")
     except Exception as e:
         lof_df = pd.DataFrame()
-        print(f"⚠️  无法获取LOF基金实时行情数据: {str(e)[:100]}")
+        error_msg = safe_truncate(str(e), 100)
+        print(f"⚠️  无法获取LOF基金实时行情数据: {error_msg}")
     
     # 合并ETF和LOF数据
     if etf_df.empty and lof_df.empty:
