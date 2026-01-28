@@ -154,6 +154,7 @@ def get_lof_realtime_data():
         print(f"  LOF获取失败: {error_msg}")
         raise
 
+@retry_on_failure(max_retries=2, delay=3, backoff=2)
 def get_etf_nav_data():
     """获取ETF净值数据（场外价格）"""
     print("正在获取ETF净值数据...")
@@ -185,6 +186,7 @@ def calculate_premium_rate(spot_price, nav_price):
 # 全局变量：缓存所有基金的净值数据
 _all_fund_nav_cache = None
 
+@retry_on_failure(max_retries=2, delay=3, backoff=2)
 def get_all_fund_nav():
     """获取所有基金的净值数据（缓存）"""
     global _all_fund_nav_cache
