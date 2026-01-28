@@ -154,12 +154,22 @@ def get_lof_realtime_data():
         print(f"  LOF获取失败: {error_msg}")
         raise
 
+@retry_on_failure(max_retries=2, delay=3, backoff=2)
+def _get_etf_fund_info_em_with_retry():
+    """获取ETF基金净值（方法1）- 带重试"""
+    return ak.fund_etf_fund_info_em()
+
+@retry_on_failure(max_retries=2, delay=3, backoff=2)
+def _get_fund_open_fund_info_em_with_retry():
+    """获取基金净值（方法2）- 带重试"""
+    return ak.fund_open_fund_info_em(fund="159919", indicator="单位净值走势")
+
 def get_etf_nav_data():
     """获取ETF净值数据（场外价格）"""
     print("正在获取ETF净值数据...")
     try:
         # 方法1: 获取ETF基金净值
-        df = ak.fund_etf_fund_info_em()
+        df = _get_etf_fund_info_em_with_retry()
         if df is not None and not df.empty:
             return df
     except Exception as e:
@@ -167,7 +177,7 @@ def get_etf_nav_data():
     
     try:
         # 方法2: 备用方案
-        df = ak.fund_open_fund_info_em(fund="159919", indicator="单位净值走势")
+        df = _get_fund_open_fund_info_em_with_retry()
         if df is not None and not df.empty:
             return df
     except Exception as e:
@@ -185,15 +195,23 @@ def calculate_premium_rate(spot_price, nav_price):
 # 全局变量：缓存所有基金的净值数据
 _all_fund_nav_cache = None
 
+@retry_on_failure(max_retries=2, delay=3, backoff=2)
+def _fetch_all_fund_nav():
+    """获取所有基金的净值数据（内部函数，带重试）"""
+    print("正在获取所有基金的净值数据...")
+    df = ak.fund_open_fund_daily_em()
+    if df is not None and not df.empty:
+        print(f"成功获取 {len(df)} 条基金净值数据")
+        return df
+    else:
+        raise Exception("基金净值数据为空")
+
 def get_all_fund_nav():
     """获取所有基金的净值数据（缓存）"""
     global _all_fund_nav_cache
     if _all_fund_nav_cache is None:
         try:
-            print("正在获取所有基金的净值数据...")
-            _all_fund_nav_cache = ak.fund_open_fund_daily_em()
-            if _all_fund_nav_cache is not None and not _all_fund_nav_cache.empty:
-                print(f"成功获取 {len(_all_fund_nav_cache)} 条基金净值数据")
+            _all_fund_nav_cache = _fetch_all_fund_nav()
         except Exception as e:
             print(f"获取基金净值数据失败: {e}")
             _all_fund_nav_cache = pd.DataFrame()
