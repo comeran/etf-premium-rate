@@ -1,6 +1,14 @@
 # ETF溢价率报告配置文件示例
 # 复制此文件为 config.yaml 并填写实际配置
 
+# 数据源配置（可选）
+# 配置 Tushare Token 后，将优先使用 Tushare 获取场内行情（需在 tushare.pro 注册并获取 token）
+data_sources:
+  tushare:
+    # 在 https://tushare.pro 注册后，在个人中心获取 token
+    # 也可通过环境变量 TUSHARE_TOKEN 配置（环境变量优先）
+    token: ""
+
 # 邮件配置
 email:
   # SMTP服务器配置

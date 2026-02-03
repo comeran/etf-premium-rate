@@ -37,10 +37,12 @@ etf-premium-rate/
 pip install -r requirements.txt
 ```
 
-2. **配置邮件**
+2. **配置**
 ```bash
 cp config.example.yaml config.yaml
-# 编辑 config.yaml，填写你的邮件配置
+# 编辑 config.yaml：
+# - 邮件配置（必填）
+# - data_sources.tushare.token（可选，配置后优先使用 Tushare 获取行情）
 ```
 
 3. **运行脚本**
@@ -67,6 +69,16 @@ python src/etf_premium_rate.py
 - **赎回状态**：基金的赎回状态
 - **手续费**：基金申购/赎回的手续费率
 
+### 数据源优先级
+
+场内行情（ETF/LOF 价格）按以下顺序尝试，直到成功：
+
+1. **Tushare**（推荐）：需在 [tushare.pro](https://tushare.pro) 注册并配置 Token，稳定性好、需积分
+2. **akshare**：无需配置，免费
+3. **Baostock**：无需配置，免费（使用最近交易日收盘价）
+
+配置 Tushare 后优先使用 Tushare；未配置或失败时自动回退到 akshare、Baostock。
+
 ## 📝 计算公式
 
 **溢价率** = (场内价格 - 场外价格) / 场外价格 × 100%
@@ -78,12 +90,13 @@ python src/etf_premium_rate.py
 
 配置文件 `config.yaml` 包含以下配置项：
 
+- `data_sources.tushare.token`: （可选）Tushare Token，配置后场内行情优先使用 Tushare；也可通过环境变量 `TUSHARE_TOKEN` 配置
 - `email`: 邮件发送配置（SMTP服务器、账号、收件人等）
 - `report`: 报告配置（排行榜数量、是否只发送溢价等）
 
 **注意：** 定时任务配置在 `.github/workflows/etf_premium_rate_schedule.yml` 文件中设置，不在 `config.yaml` 中配置。
 
-详细配置说明请参考 `config.example.yaml`
+详细配置说明请参考 `config.example.yaml`。Tushare Token 获取方式：登录 [tushare.pro](https://tushare.pro) → 个人中心 → 接口 Token。
 
 ## ⚠️ 免责声明
 

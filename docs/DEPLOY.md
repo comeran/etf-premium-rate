@@ -51,6 +51,7 @@ git push -u origin main
 
 | Secret 名称 | 说明 | 默认值 |
 |------------|------|--------|
+| `TUSHARE_TOKEN` | Tushare 接口 Token（配置后优先使用 Tushare 获取场内行情，需在 [tushare.pro](https://tushare.pro) 注册） | 无 |
 | `EMAIL_SUBJECT` | 邮件主题 | `📊 ETF/LOF溢价率排行榜 - {date}` |
 | `REPORT_TOP_N` | 排行榜数量 | `100` |
 | `REPORT_ONLY_PREMIUM` | 是否只发送溢价 | `false` |

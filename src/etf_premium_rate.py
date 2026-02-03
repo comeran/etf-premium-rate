@@ -19,7 +19,7 @@ ETF/LOF溢价率报告生成器
 说明:
     - 溢价率 = (场内价格 - 场外价格) / 场外价格 * 100%
     - 溢价率为正表示溢价，为负表示折价
-    - 场内行情优先使用 akshare，失败时自动切换 Baostock（最近交易日收盘价）
+    - 数据源优先级：Tushare（需配置 token）> akshare > Baostock
 """
 
 import pandas as pd
@@ -98,6 +98,14 @@ def retry_on_failure(max_retries=2, delay=2, backoff=2, exceptions=(Exception,))
         return wrapper
     return decorator
 
+# 第一数据源 Tushare（需配置 token，见 config.yaml 或环境变量 TUSHARE_TOKEN）
+try:
+    import tushare as ts
+    _TUSHARE_AVAILABLE = True
+except ImportError:
+    _TUSHARE_AVAILABLE = False
+    ts = None
+
 # 备用数据源 Baostock（可选，akshare 失败时使用）
 try:
     import baostock as bs
@@ -105,6 +113,79 @@ try:
 except ImportError:
     _BAOSTOCK_AVAILABLE = False
     bs = None
+
+# Tushare Token：由 load_config() 从 config 或环境变量 TUSHARE_TOKEN 写入
+_TUSHARE_TOKEN = None
+
+def _get_tushare_token():
+    """获取 Tushare Token（环境变量优先）"""
+    global _TUSHARE_TOKEN
+    return (os.getenv('TUSHARE_TOKEN') or '').strip() or (_TUSHARE_TOKEN or '').strip() or ''
+
+
+# ---------- Tushare 数据源（第一选择，需配置 token） ----------
+
+def _get_spot_tushare(fund_type='ETF'):
+    """
+    从 Tushare 获取 ETF/LOF 场内行情（最近交易日收盘价）。
+    返回与 akshare 兼容的 DataFrame：代码、名称、最新价、成交量。
+    """
+    if not _TUSHARE_AVAILABLE:
+        return None
+    token = _get_tushare_token()
+    if not token:
+        return None
+    print(f"正在使用 Tushare 获取{fund_type}场内行情...")
+    try:
+        ts.set_token(token)
+        pro = ts.pro_api()
+        # 场内基金列表，存续状态=上市
+        basic = pro.fund_basic(market='E', status='L')
+        if basic is None or basic.empty:
+            return None
+        # 筛选 ETF 或 LOF：type 列可能为中文（如 股票型），同时用名称包含 ETF/LOF 匹配
+        name_upper = basic['name'].astype(str).str.upper()
+        if fund_type == 'ETF':
+            type_ok = basic['type'].astype(str).str.upper().str.contains('ETF', na=False) if 'type' in basic.columns else pd.Series(False, index=basic.index)
+            basic = basic[type_ok | name_upper.str.contains('ETF', na=False)]
+        else:
+            type_ok = basic['type'].astype(str).str.upper().str.contains('LOF', na=False) if 'type' in basic.columns else pd.Series(False, index=basic.index)
+            basic = basic[type_ok | name_upper.str.contains('LOF', na=False)]
+        if basic.empty:
+            return None
+        # 最近交易日
+        beijing_tz = timezone(timedelta(hours=8))
+        today = datetime.now(beijing_tz).strftime("%Y%m%d")
+        start = (datetime.now(beijing_tz) - timedelta(days=15)).strftime("%Y%m%d")
+        cal = pro.trade_cal(exchange='SSE', start_date=start, end_date=today, is_open='1')
+        if cal is None or cal.empty:
+            return None
+        last_date = cal.iloc[-1]['cal_date']
+        # 当日行情（不传 ts_code 时返回当日全部，单次最多 2000 行）
+        daily = pro.fund_daily(trade_date=last_date)
+        if daily is None or daily.empty:
+            return None
+        # 合并：basic 与 daily 按 ts_code
+        merged = daily.merge(basic[['ts_code', 'name']], on='ts_code', how='inner')
+        if merged.empty:
+            return None
+        # 统一列名：代码(6位)、名称、最新价(close)、成交量(vol)
+        merged['代码'] = merged['ts_code'].str.replace(r'\.(SH|SZ)$', '', regex=True)
+        merged['名称'] = merged['name']
+        result = pd.DataFrame({
+            '代码': merged['代码'],
+            '名称': merged['名称'],
+            '最新价': merged['close'].astype(float),
+            '成交量': merged['vol'].fillna(0).astype(float),
+            '基金类型': fund_type
+        })
+        print(f"Tushare 获取到 {len(result)} 条{fund_type}行情（日期: {last_date}）")
+        return result
+    except Exception as e:
+        error_msg = safe_truncate(str(e), 120)
+        print(f"Tushare 获取{fund_type}失败: {error_msg}")
+        return None
+
 
 def get_etf_list():
     """获取ETF基金列表"""
@@ -127,11 +208,17 @@ def get_etf_list():
 def get_etf_realtime_data():
     """获取ETF实时行情数据（场内价格）
     
-    注意：此函数会尝试从东方财富获取数据，失败时会抛出异常
+    数据源优先级：Tushare（需 token）> akshare > Baostock
     """
     print("正在获取ETF实时行情数据...")
     
-    # 获取ETF实时行情
+    # 第一选择：Tushare（需配置 token）
+    df_ts = _get_spot_tushare(fund_type='ETF')
+    if df_ts is not None and not df_ts.empty:
+        print(f"✓ 成功获取 {len(df_ts)} 条ETF数据（Tushare）")
+        return df_ts
+    
+    # 第二选择：东方财富 / 新浪
     try:
         df = ak.fund_etf_spot_em()
         if df is not None and not df.empty:
@@ -160,9 +247,17 @@ def get_etf_realtime_data():
 def get_lof_realtime_data():
     """获取LOF基金实时行情数据（场内价格）
     
-    注意：此函数会尝试从东方财富获取数据，失败时会抛出异常
+    数据源优先级：Tushare（需 token）> akshare > Baostock
     """
     print("正在获取LOF基金实时行情数据...")
+    
+    # 第一选择：Tushare（需配置 token）
+    df_ts = _get_spot_tushare(fund_type='LOF')
+    if df_ts is not None and not df_ts.empty:
+        print(f"✓ 成功获取 {len(df_ts)} 条LOF数据（Tushare）")
+        return df_ts
+    
+    # 第二选择：东方财富
     try:
         df = ak.fund_lof_spot_em()
         if df is not None and not df.empty:
@@ -871,6 +966,12 @@ def load_config():
                     print("   请配置 GitHub Secrets 中的 EMAIL_RECIPIENTS 或在 config.yaml 中设置收件人")
             else:
                 print("⚠️  警告: 配置中 recipients 不存在或为 None")
+    
+    # Tushare Token：供场内行情优先使用 Tushare（环境变量优先）
+    global _TUSHARE_TOKEN
+    _TUSHARE_TOKEN = (os.getenv('TUSHARE_TOKEN') or '').strip() or (config.get('data_sources', {}).get('tushare', {}).get('token') or '').strip()
+    if _TUSHARE_TOKEN:
+        print("📊 数据源: 已配置 Tushare Token，将优先使用 Tushare 获取场内行情")
     
     return config
 
