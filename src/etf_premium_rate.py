@@ -19,6 +19,7 @@ ETF/LOF溢价率报告生成器
 说明:
     - 溢价率 = (场内价格 - 场外价格) / 场外价格 * 100%
     - 溢价率为正表示溢价，为负表示折价
+    - 场内行情优先使用 akshare，失败时自动切换 Baostock（最近交易日收盘价）
 """
 
 import pandas as pd
@@ -97,6 +98,14 @@ def retry_on_failure(max_retries=2, delay=2, backoff=2, exceptions=(Exception,))
         return wrapper
     return decorator
 
+# 备用数据源 Baostock（可选，akshare 失败时使用）
+try:
+    import baostock as bs
+    _BAOSTOCK_AVAILABLE = True
+except ImportError:
+    _BAOSTOCK_AVAILABLE = False
+    bs = None
+
 def get_etf_list():
     """获取ETF基金列表"""
     print("正在获取ETF基金列表...")
@@ -133,7 +142,19 @@ def get_etf_realtime_data():
     except Exception as e:
         error_msg = safe_truncate(str(e), 150)
         print(f"  ETF获取失败: {error_msg}")
-        raise
+    try:
+        # 方法2: 备用方案 - 使用新浪接口
+        df = ak.fund_etf_hist_sina()
+        if df is not None and not df.empty:
+            return df
+    except Exception as e:
+        print(f"方法2获取实时行情失败: {e}")
+    
+    # 方法3: 备用方案 - Baostock（最近交易日收盘价作为场内价）
+    df_bs = _get_spot_baostock(fund_type='ETF')
+    if df_bs is not None and not df_bs.empty:
+        return df_bs
+    return None
 
 @retry_on_failure(max_retries=2, delay=3, backoff=2)
 def get_lof_realtime_data():
@@ -152,7 +173,11 @@ def get_lof_realtime_data():
     except Exception as e:
         error_msg = safe_truncate(str(e), 150)
         print(f"  LOF获取失败: {error_msg}")
-        raise
+    # 备用：Baostock（使用最近交易日收盘价作为场内价）
+    df_bs = _get_spot_baostock(fund_type='LOF')
+    if df_bs is not None and not df_bs.empty:
+        return df_bs
+    return None
 
 @retry_on_failure(max_retries=2, delay=3, backoff=2)
 def _get_etf_fund_info_em_with_retry():
@@ -163,6 +188,119 @@ def _get_etf_fund_info_em_with_retry():
 def _get_fund_open_fund_info_em_with_retry():
     """获取基金净值（方法2）- 带重试"""
     return ak.fund_open_fund_info_em(fund="159919", indicator="单位净值走势")
+
+
+# ---------- Baostock 备用数据源 ----------
+# Baostock 无实时行情与净值，仅提供日线收盘价，用作 akshare 失败时的场内价备用
+
+def _get_spot_baostock(fund_type='ETF'):
+    """
+    从 Baostock 获取 ETF/LOF 场内行情（最近交易日收盘价）。
+    返回与 akshare 兼容的 DataFrame：代码、名称、最新价、成交量。
+    """
+    if not _BAOSTOCK_AVAILABLE:
+        print("Baostock 未安装，跳过备用数据源")
+        return None
+    print(f"正在使用 Baostock 获取{fund_type}场内行情（最近交易日收盘价）...")
+    try:
+        lg = bs.login()
+        if lg.error_code != '0':
+            print(f"Baostock 登录失败: {lg.error_msg}")
+            return None
+        try:
+            # 获取最近交易日
+            last_day = None
+            beijing_tz = timezone(timedelta(hours=8))
+            for i in range(10):
+                d = (datetime.now(beijing_tz) - timedelta(days=i)).strftime("%Y-%m-%d")
+                rs = bs.query_trade_dates(start_date=d, end_date=d)
+                if rs.error_code != '0':
+                    continue
+                data = []
+                while rs.next():
+                    data.append(rs.get_row_data())
+                if data and len(data) > 0 and data[0][1] == '1':
+                    last_day = d
+                    break
+            if not last_day:
+                print("Baostock 无法获取最近交易日")
+                return None
+            rs = bs.query_stock_basic()
+            if rs.error_code != '0':
+                print(f"Baostock 获取证券列表失败: {rs.error_msg}")
+                return None
+            fields = rs.fields
+            rows = []
+            while rs.next():
+                rows.append(rs.get_row_data())
+            basic_df = pd.DataFrame(rows, columns=fields)
+        except Exception as e:
+            print(f"Baostock 获取证券列表失败: {e}")
+            return None
+        if basic_df.empty:
+            return None
+        # type: 1=股票 2=指数 3=其他 4=可转债 5=ETF；status: 1=上市 0=退市
+        basic_df = basic_df[basic_df['status'] == '1']
+        if fund_type == 'ETF':
+            fund_df = basic_df[basic_df['type'] == '5'].copy()
+        else:
+            # LOF：type=3 且名称含 LOF，或深市 16 开头
+            mask_type3 = basic_df['type'] == '3'
+            mask_name = basic_df['code_name'].astype(str).str.contains('LOF', na=False)
+            mask_sz16 = basic_df['code'].astype(str).str.match(r'sz\.16\d{4}')
+            fund_df = basic_df[mask_type3 & (mask_name | mask_sz16)].copy()
+        if fund_df.empty:
+            print(f"Baostock 未找到{fund_type}列表")
+            return None
+        fund_df['代码'] = fund_df['code'].str.replace(r'^(sh|sz)\.', '', regex=True)
+        fund_df['名称'] = fund_df['code_name']
+        result_list = []
+        for _, row in fund_df.iterrows():
+            code_bs = row['code']
+            code_short = row['代码']
+            name = row['名称']
+            try:
+                rs = bs.query_history_k_data_plus(
+                    code_bs,
+                    "date,code,close,volume,amount",
+                    start_date=last_day,
+                    end_date=last_day,
+                    frequency="d",
+                    adjustflag="3"
+                )
+                if rs.error_code != '0':
+                    continue
+                if not rs.next():
+                    continue
+                data = rs.get_row_data()
+                close = float(data[2]) if data[2] and data[2] != '' else None
+                vol = float(data[3]) if data[3] and data[3] != '' else 0
+                if close is None or close <= 0:
+                    continue
+                result_list.append({
+                    '代码': code_short,
+                    '名称': name,
+                    '最新价': close,
+                    '成交量': vol,
+                    '基金类型': fund_type
+                })
+            except Exception:
+                continue
+            time.sleep(0.05)
+        if not result_list:
+            return None
+        df = pd.DataFrame(result_list)
+        print(f"Baostock 获取到 {len(df)} 条{fund_type}行情（日期: {last_day}）")
+        return df
+    except Exception as e:
+        print(f"Baostock 获取{fund_type}行情失败: {e}")
+        return None
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
+
 
 def get_etf_nav_data():
     """获取ETF净值数据（场外价格）"""
