@@ -35,6 +35,33 @@ from email.header import Header
 import os
 from functools import wraps
 import socket
+import requests
+
+# 东方财富(em)请求需携带 nid18 cookie 时使用（见 akshare 相关 issue）
+_AKSHARE_EM_NID18 = None
+_AKSHARE_EM_NID18_CREATE_TIME = None
+_AKSHARE_EM_COOKIE_PATCH_APPLIED = False
+
+def _apply_akshare_em_cookie_if_needed(nid18, nid18_create_time):
+    """
+    若配置了 nid18 与 nid18_create_time，对 requests.Session.get 做猴子补丁，
+    使发往东方财富(eastmoney)的请求自动带上 cookie，解决 em 接口限流/拦截问题。
+    """
+    global _AKSHARE_EM_COOKIE_PATCH_APPLIED
+    nid18 = (nid18 or '').strip()
+    nid18_create_time = (nid18_create_time or '').strip()
+    if not nid18 or not nid18_create_time or _AKSHARE_EM_COOKIE_PATCH_APPLIED:
+        return
+    _AKSHARE_EM_COOKIE_PATCH_APPLIED = True
+    _orig_get = requests.Session.get
+    def _patched_get(self, url, *args, **kwargs):
+        if url and 'eastmoney' in url:
+            headers = dict(kwargs.get('headers') or {})
+            headers['cookie'] = f"nid18={nid18}; nid18_create_time={nid18_create_time};"
+            kwargs['headers'] = headers
+        return _orig_get(self, url, *args, **kwargs)
+    requests.Session.get = _patched_get
+    print("📊 已为东方财富(em)请求注入 nid18 cookie")
 
 # 设置全局socket超时时间（30秒），避免请求长时间挂起
 # 注意：这会影响整个Python进程中的所有socket连接
@@ -282,7 +309,7 @@ def _get_etf_fund_info_em_with_retry():
 @retry_on_failure(max_retries=2, delay=3, backoff=2)
 def _get_fund_open_fund_info_em_with_retry():
     """获取基金净值（方法2）- 带重试"""
-    return ak.fund_open_fund_info_em(fund="159919", indicator="单位净值走势")
+    return ak.fund_open_fund_info_em(symbol="159919", indicator="单位净值走势")
 
 
 # ---------- Baostock 备用数据源 ----------
@@ -972,6 +999,12 @@ def load_config():
     _TUSHARE_TOKEN = (os.getenv('TUSHARE_TOKEN') or '').strip() or (config.get('data_sources', {}).get('tushare', {}).get('token') or '').strip()
     if _TUSHARE_TOKEN:
         print("📊 数据源: 已配置 Tushare Token，将优先使用 Tushare 获取场内行情")
+    
+    # 东方财富(em)请求 cookie：解决 akshare 调用 em 接口被限流/拦截（见 akshare 相关 issue）
+    akshare_em = config.get('data_sources', {}).get('akshare_em', {})
+    nid18 = (os.getenv('AKSHARE_EM_NID18') or '').strip() or (akshare_em.get('nid18') or '').strip()
+    nid18_create_time = (os.getenv('AKSHARE_EM_NID18_CREATE_TIME') or '').strip() or (akshare_em.get('nid18_create_time') or '').strip()
+    _apply_akshare_em_cookie_if_needed(nid18, nid18_create_time)
     
     return config
 

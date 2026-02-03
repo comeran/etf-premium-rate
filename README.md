@@ -79,6 +79,8 @@ python src/etf_premium_rate.py
 
 配置 Tushare 后优先使用 Tushare；未配置或失败时自动回退到 akshare、Baostock。
 
+**akshare 东方财富(em) 请求**：若 akshare 调用东方财富接口被限流/拦截，需配置 `nid18` 与 `nid18_create_time`（见 akshare 相关 issue）。在 `config.yaml` 的 `data_sources.akshare_em` 中填写，或设置环境变量 `AKSHARE_EM_NID18`、`AKSHARE_EM_NID18_CREATE_TIME`。本仓库已使用 akshare >= 1.18.21。
+
 ## 📝 计算公式
 
 **溢价率** = (场内价格 - 场外价格) / 场外价格 × 100%
@@ -91,6 +93,7 @@ python src/etf_premium_rate.py
 配置文件 `config.yaml` 包含以下配置项：
 
 - `data_sources.tushare.token`: （可选）Tushare Token，配置后场内行情优先使用 Tushare；也可通过环境变量 `TUSHARE_TOKEN` 配置
+- `data_sources.akshare_em.nid18` / `nid18_create_time`: （可选）东方财富请求 cookie，解决 akshare 调用 em 接口被限流；也可通过环境变量 `AKSHARE_EM_NID18`、`AKSHARE_EM_NID18_CREATE_TIME` 配置
 - `email`: 邮件发送配置（SMTP服务器、账号、收件人等）
 - `report`: 报告配置（排行榜数量、是否只发送溢价等）
 

@@ -55,5 +55,7 @@ jobs:
     - name: Generate and send ETF Premium Rate Report
       env:
         TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+        AKSHARE_EM_NID18: ${{ secrets.AKSHARE_EM_NID18 }}
+        AKSHARE_EM_NID18_CREATE_TIME: ${{ secrets.AKSHARE_EM_NID18_CREATE_TIME }}
       run: |
         python src/etf_premium_rate.py

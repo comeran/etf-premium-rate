@@ -8,6 +8,12 @@ data_sources:
     # 在 https://tushare.pro 注册后，在个人中心获取 token
     # 也可通过环境变量 TUSHARE_TOKEN 配置（环境变量优先）
     token: ""
+  # 东方财富(em)请求 cookie：akshare 调用东方财富接口时可能被限流，需配置 nid18（见 akshare 相关 issue）
+  akshare_em:
+    # 从浏览器访问 quote.eastmoney.com 或 push2.eastmoney.com 后，在开发者工具中复制 Cookie 里的 nid18、nid18_create_time
+    # 也可通过环境变量 AKSHARE_EM_NID18、AKSHARE_EM_NID18_CREATE_TIME 配置（环境变量优先）
+    nid18: ""
+    nid18_create_time: ""
 
 # 邮件配置
 email:

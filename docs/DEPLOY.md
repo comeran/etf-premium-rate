@@ -52,6 +52,8 @@ git push -u origin main
 | Secret 名称 | 说明 | 默认值 |
 |------------|------|--------|
 | `TUSHARE_TOKEN` | Tushare 接口 Token（配置后优先使用 Tushare 获取场内行情，需在 [tushare.pro](https://tushare.pro) 注册） | 无 |
+| `AKSHARE_EM_NID18` | 东方财富请求 cookie nid18（解决 akshare 调用 em 接口被限流，见 akshare 相关 issue） | 无 |
+| `AKSHARE_EM_NID18_CREATE_TIME` | 东方财富请求 cookie nid18_create_time（与 AKSHARE_EM_NID18 配套） | 无 |
 | `EMAIL_SUBJECT` | 邮件主题 | `📊 ETF/LOF溢价率排行榜 - {date}` |
 | `REPORT_TOP_N` | 排行榜数量 | `100` |
 | `REPORT_ONLY_PREMIUM` | 是否只发送溢价 | `false` |
