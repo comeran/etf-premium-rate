@@ -68,6 +68,29 @@ def _apply_akshare_em_cookie_if_needed(nid18, nid18_create_time):
 # 如果此模块被导入到其他应用中，需要注意这个全局设置的影响
 socket.setdefaulttimeout(30)
 
+_SPOT_CODE_COLUMNS = ('代码', '基金代码', 'code', 'symbol')
+_SPOT_NAME_COLUMNS = ('名称', '基金名称', 'name', '基金简称')
+_SPOT_PRICE_COLUMNS = ('最新价', '现价', '当前价', 'price', '最新净值')
+
+
+def _has_any_column(df, candidates):
+    """判断 DataFrame 是否包含候选列中的任意一个。"""
+    return any(col in df.columns for col in candidates)
+
+
+def _is_valid_spot_dataframe(df):
+    """
+    判断返回结果是否为可用于后续溢价率计算的场内行情数据。
+    历史K线等不包含代码/名称/最新价字段的数据不应被当作实时行情使用。
+    """
+    if df is None or df.empty:
+        return False
+    return (
+        _has_any_column(df, _SPOT_CODE_COLUMNS)
+        and _has_any_column(df, _SPOT_NAME_COLUMNS)
+        and _has_any_column(df, _SPOT_PRICE_COLUMNS)
+    )
+
 def safe_truncate(text, max_length=100):
     """
     安全截断字符串
@@ -241,32 +264,26 @@ def get_etf_realtime_data():
     
     # 第一选择：Tushare（需配置 token）
     df_ts = _get_spot_tushare(fund_type='ETF')
-    if df_ts is not None and not df_ts.empty:
+    if _is_valid_spot_dataframe(df_ts):
         print(f"✓ 成功获取 {len(df_ts)} 条ETF数据（Tushare）")
         return df_ts
     
-    # 第二选择：东方财富 / 新浪
+    # 第二选择：东方财富
     try:
         df = ak.fund_etf_spot_em()
-        if df is not None and not df.empty:
+        if _is_valid_spot_dataframe(df):
             print(f"✓ 成功获取 {len(df)} 条ETF数据")
             return df
-        else:
+        if df is None or df.empty:
             raise Exception("ETF数据为空")
+        print(f"  ETF获取失败: 返回了非实时行情数据，列名为 {list(df.columns)}")
     except Exception as e:
         error_msg = safe_truncate(str(e), 150)
         print(f"  ETF获取失败: {error_msg}")
-    try:
-        # 方法2: 备用方案 - 使用新浪接口
-        df = ak.fund_etf_hist_sina()
-        if df is not None and not df.empty:
-            return df
-    except Exception as e:
-        print(f"方法2获取实时行情失败: {e}")
     
-    # 方法3: 备用方案 - Baostock（最近交易日收盘价作为场内价）
+    # 备用方案：Baostock（最近交易日收盘价作为场内价）
     df_bs = _get_spot_baostock(fund_type='ETF')
-    if df_bs is not None and not df_bs.empty:
+    if _is_valid_spot_dataframe(df_bs):
         return df_bs
     return None
 
@@ -280,24 +297,25 @@ def get_lof_realtime_data():
     
     # 第一选择：Tushare（需配置 token）
     df_ts = _get_spot_tushare(fund_type='LOF')
-    if df_ts is not None and not df_ts.empty:
+    if _is_valid_spot_dataframe(df_ts):
         print(f"✓ 成功获取 {len(df_ts)} 条LOF数据（Tushare）")
         return df_ts
     
     # 第二选择：东方财富
     try:
         df = ak.fund_lof_spot_em()
-        if df is not None and not df.empty:
+        if _is_valid_spot_dataframe(df):
             print(f"✓ 成功获取 {len(df)} 条LOF数据")
             return df
-        else:
+        if df is None or df.empty:
             raise Exception("LOF数据为空")
+        print(f"  LOF获取失败: 返回了非实时行情数据，列名为 {list(df.columns)}")
     except Exception as e:
         error_msg = safe_truncate(str(e), 150)
         print(f"  LOF获取失败: {error_msg}")
     # 备用：Baostock（使用最近交易日收盘价作为场内价）
     df_bs = _get_spot_baostock(fund_type='LOF')
-    if df_bs is not None and not df_bs.empty:
+    if _is_valid_spot_dataframe(df_bs):
         return df_bs
     return None
 
@@ -1005,6 +1023,8 @@ def load_config():
     nid18 = (os.getenv('AKSHARE_EM_NID18') or '').strip() or (akshare_em.get('nid18') or '').strip()
     nid18_create_time = (os.getenv('AKSHARE_EM_NID18_CREATE_TIME') or '').strip() or (akshare_em.get('nid18_create_time') or '').strip()
     _apply_akshare_em_cookie_if_needed(nid18, nid18_create_time)
+    if not _TUSHARE_TOKEN and not (nid18 and nid18_create_time):
+        print("⚠️  未配置 Tushare Token 或东方财富 nid18 cookie，生产环境实时行情可能因第三方限流而失败")
     
     return config
 
@@ -1453,4 +1473,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

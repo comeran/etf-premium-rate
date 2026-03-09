@@ -1,7 +1,8 @@
 # ETF溢价率报告配置文件示例
 # 复制此文件为 config.yaml 并填写实际配置
 
-# 数据源配置（可选）
+# 数据源配置
+# 生产环境建议至少配置 Tushare Token 或东方财富 nid18 cookie 其中一种
 # 配置 Tushare Token 后，将优先使用 Tushare 获取场内行情（需在 tushare.pro 注册并获取 token）
 data_sources:
   tushare:
@@ -48,4 +49,3 @@ report:
 
 # 注意：定时任务配置在 .github/workflows/etf_premium_rate_schedule.yml 中设置
 # 不需要在此配置文件中设置 schedule
-

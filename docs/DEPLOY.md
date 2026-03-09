@@ -58,6 +58,9 @@ git push -u origin main
 | `REPORT_TOP_N` | 排行榜数量 | `100` |
 | `REPORT_ONLY_PREMIUM` | 是否只发送溢价 | `false` |
 
+> 生产环境建议至少配置 `TUSHARE_TOKEN` 或 `AKSHARE_EM_NID18` + `AKSHARE_EM_NID18_CREATE_TIME` 其中一种。
+> 否则东方财富接口被限流时，工作流可能无法拿到实时 ETF/LOF 行情。
+
 ### 步骤 4: 测试运行
 
 1. 进入仓库的 `Actions` 标签页
