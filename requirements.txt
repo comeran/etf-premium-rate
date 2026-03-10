@@ -1,6 +1,6 @@
 pandas>=2.0.0
 tushare>=1.2.0
 akshare>=1.18.21
+finshare>=1.0.1
 baostock>=0.8.8
 pyyaml>=6.0
-

@@ -19,7 +19,7 @@ ETF/LOF溢价率报告生成器
 说明:
     - 溢价率 = (场内价格 - 场外价格) / 场外价格 * 100%
     - 溢价率为正表示溢价，为负表示折价
-    - 数据源优先级：Tushare（需配置 token）> akshare > Baostock
+    - 数据源优先级：akshare > finshare > Tushare（需配置 token）> Baostock
 """
 
 import pandas as pd
@@ -164,6 +164,14 @@ except ImportError:
     _BAOSTOCK_AVAILABLE = False
     bs = None
 
+# 备用数据源 finshare（可选，akshare 失败时使用）
+try:
+    from finshare import get_data_manager
+    _FINSHARE_AVAILABLE = True
+except ImportError:
+    _FINSHARE_AVAILABLE = False
+    get_data_manager = None
+
 # Tushare Token：由 load_config() 从 config 或环境变量 TUSHARE_TOKEN 写入
 _TUSHARE_TOKEN = None
 
@@ -173,7 +181,144 @@ def _get_tushare_token():
     return (os.getenv('TUSHARE_TOKEN') or '').strip() or (_TUSHARE_TOKEN or '').strip() or ''
 
 
-# ---------- Tushare 数据源（第一选择，需配置 token） ----------
+def _normalize_finshare_code(value):
+    """将 finshare 返回的基金代码统一为 6 位数字。"""
+    value = str(value or '').strip()
+    if not value:
+        return ''
+    value = value.upper()
+    for prefix in ('SH', 'SZ', 'BJ', 'OF'):
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+    for suffix in ('.SH', '.SZ', '.BJ'):
+        if value.endswith(suffix):
+            value = value[:-len(suffix)]
+            break
+    digits = ''.join(ch for ch in value if ch.isdigit())
+    if len(digits) < 6:
+        digits = digits.zfill(6)
+    if len(digits) != 6:
+        return ''
+    return digits
+
+
+def _get_finshare_candidates(fund_type='ETF'):
+    """使用 Baostock 基础证券列表生成 finshare 快照查询所需的基金代码列表。"""
+    if not _BAOSTOCK_AVAILABLE:
+        return []
+
+    try:
+        lg = bs.login()
+        if lg.error_code != '0':
+            print(f"Baostock 登录失败，无法为 finshare 生成{fund_type}代码列表: {lg.error_msg}")
+            return []
+
+        rs = bs.query_stock_basic()
+        if rs.error_code != '0':
+            print(f"Baostock 获取证券列表失败，无法为 finshare 生成{fund_type}代码列表: {rs.error_msg}")
+            return []
+
+        rows = []
+        while rs.next():
+            rows.append(rs.get_row_data())
+        basic_df = pd.DataFrame(rows, columns=rs.fields)
+        if basic_df.empty:
+            return []
+
+        basic_df = basic_df[basic_df['status'] == '1']
+        if fund_type == 'ETF':
+            fund_df = basic_df[basic_df['type'] == '5'].copy()
+        else:
+            mask_type3 = basic_df['type'] == '3'
+            mask_name = basic_df['code_name'].astype(str).str.contains('LOF', na=False)
+            mask_sz16 = basic_df['code'].astype(str).str.match(r'sz\.16\d{4}')
+            fund_df = basic_df[mask_type3 & (mask_name | mask_sz16)].copy()
+        if fund_df.empty:
+            return []
+
+        fund_df['代码'] = fund_df['code'].str.replace(r'^(sh|sz)\.', '', regex=True)
+        fund_df['名称'] = fund_df['code_name'].astype(str).str.strip()
+        fund_df = fund_df[['代码', '名称']].drop_duplicates()
+        return list(fund_df.itertuples(index=False, name=None))
+    except Exception as e:
+        error_msg = safe_truncate(str(e), 120)
+        print(f"为 finshare 生成{fund_type}代码列表失败: {error_msg}")
+        return []
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
+
+
+def _get_spot_finshare(fund_type='ETF'):
+    """
+    从 finshare 获取 ETF/LOF 场内行情。
+    返回与 akshare 兼容的 DataFrame：代码、名称、最新价、成交量。
+    """
+    if not _FINSHARE_AVAILABLE:
+        print("finshare 未安装，跳过备用数据源")
+        return None
+
+    print(f"正在使用 finshare 获取{fund_type}场内行情...")
+    try:
+        candidates = _get_finshare_candidates(fund_type=fund_type)
+        if not candidates:
+            return None
+
+        manager = get_data_manager()
+        if manager is None:
+            return None
+        snapshot_map = {}
+        batch_size = 200
+        for start in range(0, len(candidates), batch_size):
+            batch_codes = [code for code, _ in candidates[start:start + batch_size]]
+            batch_results = manager.get_batch_snapshots(batch_codes) or {}
+            for key, snapshot in batch_results.items():
+                if snapshot is None:
+                    continue
+                code = _normalize_finshare_code(getattr(snapshot, 'code', '') or key)
+                if not code:
+                    continue
+                snapshot_map[code] = snapshot
+
+        rows = []
+        for code, name in candidates:
+            snapshot = snapshot_map.get(code)
+            if snapshot is None:
+                continue
+            last_price = getattr(snapshot, 'last_price', None)
+            if last_price is None:
+                continue
+            try:
+                last_price = float(last_price)
+            except (TypeError, ValueError):
+                continue
+            try:
+                volume = float(getattr(snapshot, 'volume', 0) or 0)
+            except (TypeError, ValueError):
+                volume = 0.0
+            rows.append(
+                {
+                    '代码': code,
+                    '名称': name,
+                    '最新价': last_price,
+                    '成交量': volume,
+                    '基金类型': fund_type,
+                }
+            )
+        if not rows:
+            return None
+        result = pd.DataFrame(rows)
+        print(f"finshare 获取到 {len(result)} 条{fund_type}行情")
+        return result
+    except Exception as e:
+        error_msg = safe_truncate(str(e), 120)
+        print(f"finshare 获取{fund_type}失败: {error_msg}")
+        return None
+
+
+# ---------- Tushare 数据源（第三选择，需配置 token） ----------
 
 def _get_spot_tushare(fund_type='ETF'):
     """
@@ -258,17 +403,11 @@ def get_etf_list():
 def get_etf_realtime_data():
     """获取ETF实时行情数据（场内价格）
     
-    数据源优先级：Tushare（需 token）> akshare > Baostock
+    数据源优先级：akshare > finshare > Tushare（需 token）> Baostock
     """
     print("正在获取ETF实时行情数据...")
-    
-    # 第一选择：Tushare（需配置 token）
-    df_ts = _get_spot_tushare(fund_type='ETF')
-    if _is_valid_spot_dataframe(df_ts):
-        print(f"✓ 成功获取 {len(df_ts)} 条ETF数据（Tushare）")
-        return df_ts
-    
-    # 第二选择：东方财富
+
+    # 第一选择：akshare 东方财富
     try:
         df = ak.fund_etf_spot_em()
         if _is_valid_spot_dataframe(df):
@@ -280,7 +419,19 @@ def get_etf_realtime_data():
     except Exception as e:
         error_msg = safe_truncate(str(e), 150)
         print(f"  ETF获取失败: {error_msg}")
-    
+
+    # 第二选择：finshare
+    df_fs = _get_spot_finshare(fund_type='ETF')
+    if _is_valid_spot_dataframe(df_fs):
+        print(f"✓ 成功获取 {len(df_fs)} 条ETF数据（finshare）")
+        return df_fs
+
+    # 第三选择：Tushare（需配置 token）
+    df_ts = _get_spot_tushare(fund_type='ETF')
+    if _is_valid_spot_dataframe(df_ts):
+        print(f"✓ 成功获取 {len(df_ts)} 条ETF数据（Tushare）")
+        return df_ts
+
     # 备用方案：Baostock（最近交易日收盘价作为场内价）
     df_bs = _get_spot_baostock(fund_type='ETF')
     if _is_valid_spot_dataframe(df_bs):
@@ -291,17 +442,11 @@ def get_etf_realtime_data():
 def get_lof_realtime_data():
     """获取LOF基金实时行情数据（场内价格）
     
-    数据源优先级：Tushare（需 token）> akshare > Baostock
+    数据源优先级：akshare > finshare > Tushare（需 token）> Baostock
     """
     print("正在获取LOF基金实时行情数据...")
-    
-    # 第一选择：Tushare（需配置 token）
-    df_ts = _get_spot_tushare(fund_type='LOF')
-    if _is_valid_spot_dataframe(df_ts):
-        print(f"✓ 成功获取 {len(df_ts)} 条LOF数据（Tushare）")
-        return df_ts
-    
-    # 第二选择：东方财富
+
+    # 第一选择：akshare 东方财富
     try:
         df = ak.fund_lof_spot_em()
         if _is_valid_spot_dataframe(df):
@@ -313,6 +458,19 @@ def get_lof_realtime_data():
     except Exception as e:
         error_msg = safe_truncate(str(e), 150)
         print(f"  LOF获取失败: {error_msg}")
+
+    # 第二选择：finshare
+    df_fs = _get_spot_finshare(fund_type='LOF')
+    if _is_valid_spot_dataframe(df_fs):
+        print(f"✓ 成功获取 {len(df_fs)} 条LOF数据（finshare）")
+        return df_fs
+
+    # 第三选择：Tushare（需配置 token）
+    df_ts = _get_spot_tushare(fund_type='LOF')
+    if _is_valid_spot_dataframe(df_ts):
+        print(f"✓ 成功获取 {len(df_ts)} 条LOF数据（Tushare）")
+        return df_ts
+
     # 备用：Baostock（使用最近交易日收盘价作为场内价）
     df_bs = _get_spot_baostock(fund_type='LOF')
     if _is_valid_spot_dataframe(df_bs):

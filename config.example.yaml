@@ -2,12 +2,13 @@
 # 复制此文件为 config.yaml 并填写实际配置
 
 # 数据源配置
+# 场内行情数据源优先级：akshare > finshare > tushare > baostock
+# finshare 为可选依赖，安装后自动启用，无需额外配置
 # 生产环境建议至少配置 Tushare Token 或东方财富 nid18 cookie 其中一种
-# 配置 Tushare Token 后，将优先使用 Tushare 获取场内行情（需在 tushare.pro 注册并获取 token）
 data_sources:
   tushare:
     # 在 https://tushare.pro 注册后，在个人中心获取 token
-    # 也可通过环境变量 TUSHARE_TOKEN 配置（环境变量优先）
+    # 作为第三顺位场内行情备用源，也可通过环境变量 TUSHARE_TOKEN 配置（环境变量优先）
     token: ""
   # 东方财富(em)请求 cookie：akshare 调用东方财富接口时可能被限流，需配置 nid18（见 akshare 相关 issue）
   akshare_em:
